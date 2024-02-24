@@ -43,6 +43,7 @@ const WebSocketComponent = () => {
   };
 
   return (
+    <div className="App">
     <div>
       <h1>WebSocket Chat</h1>
       <div>
@@ -59,6 +60,7 @@ const WebSocketComponent = () => {
         <button onClick={sendMessage}>Send Message</button>
         <p>Received message from server: {message.text}</p>
       </div>
+    </div>
     </div>
   );
 };

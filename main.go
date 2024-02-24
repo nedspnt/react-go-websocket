@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -15,17 +16,33 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-type Message struct {
-	Username string `json:"username"`
-	Message  string `json:"message"`
+type MessageStruct map[string]string
+
+func KeyValueToJSON(key, value string) []byte {
+	data := map[string]string{
+		key: value,
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	return jsonData
 }
 
-var clients []websocket.Conn
+func ByteToStruct(msgByte []byte) MessageStruct {
+	var msgStruct MessageStruct
+
+	err := json.Unmarshal(msgByte, &msgStruct)
+	if err != nil {
+		log.Println("Error:", err)
+	}
+	return msgStruct
+}
 
 func handleMessages(w http.ResponseWriter, r *http.Request) {
-	conn, _ := upgrader.Upgrade(w, r, nil)
 
-	clients = append(clients, *conn)
+	conn, _ := upgrader.Upgrade(w, r, nil)
+	defer conn.Close()
 
 	for {
 		// read message from browser
@@ -35,14 +52,30 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Print the message to the console
-		fmt.Printf("%s sent: %s\n", conn.RemoteAddr(), string(msg))
+		log.Printf("%s sent: %s\n", conn.RemoteAddr(), string(msg))
 
-		// Write the message so that frontend can consume
-		for _, client := range clients {
-			err := client.WriteMessage(msgType, msg)
-			if err != nil {
-				fmt.Println("Error sending message to client:", err)
+		// Unmarshal the JSON and extract value
+		msgStruct := ByteToStruct(msg)
+		inputText := msgStruct["text"]
+
+		// logic
+		returnText := ""
+		if inputText == "wow" {
+			returnText = "This is wow"
+		} else {
+			returnText = "This is NOT wow"
+		}
+		jsonByte := KeyValueToJSON("text", returnText)
+
+		err = conn.WriteMessage(msgType, jsonByte)
+		if err != nil {
+			// Check if it's a broken pipe error
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway) {
+				log.Printf("Error writing message to WebSocket: %v", err)
+			} else {
+				log.Println("WebSocket connection closed by client")
 			}
+			return
 		}
 	}
 }
@@ -50,7 +83,7 @@ func handleMessages(w http.ResponseWriter, r *http.Request) {
 func main() {
 	http.HandleFunc("/echo", handleMessages)
 
-	fmt.Println("Server started on :8080")
+	log.Println("Server started on :8080")
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		panic("Error starting server: " + err.Error())
